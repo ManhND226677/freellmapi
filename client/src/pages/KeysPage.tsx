@@ -26,6 +26,7 @@ const PLATFORMS: { value: Platform; label: string }[] = [
   { value: 'kilo', label: 'Kilo Gateway (anon ok)' },
   { value: 'pollinations', label: 'Pollinations (anon ok)' },
   { value: 'llm7', label: 'LLM7 (anon ok)' },
+  { value: 'anthropic', label: 'Anthropic Claude' },
 ]
 
 const statusDot: Record<string, string> = {
@@ -285,6 +286,48 @@ function UnifiedKeySection() {
   )
 }
 
+function ApiGuideSection() {
+  const baseUrl = import.meta.env.DEV
+    ? `http://${window.location.hostname}:${__SERVER_PORT__}/v1`
+    : `${window.location.origin}/v1`
+  const apiKey = 'freellmapi-your-unified-key'
+
+  return (
+    <section className="grid gap-4 lg:grid-cols-2">
+      <div className="rounded-lg border bg-card p-5 min-w-0">
+        <h2 className="text-sm font-medium">OpenAI API</h2>
+        <div className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs">
+          <span className="text-muted-foreground">Base URL</span>
+          <code className="font-mono truncate">{baseUrl}</code>
+          <span className="text-muted-foreground">Endpoint</span>
+          <code className="font-mono">/chat/completions</code>
+        </div>
+        <pre className="mt-4 overflow-x-auto rounded-md bg-muted p-3 text-[11px] leading-5"><code>{`curl ${baseUrl}/chat/completions \\
+  -H "Authorization: Bearer ${apiKey}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"messages":[{"role":"user","content":"hi"}]}'`}</code></pre>
+      </div>
+
+      <div className="rounded-lg border bg-card p-5 min-w-0">
+        <h2 className="text-sm font-medium">Anthropic API</h2>
+        <div className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs">
+          <span className="text-muted-foreground">Base URL</span>
+          <code className="font-mono truncate">{baseUrl}</code>
+          <span className="text-muted-foreground">Endpoint</span>
+          <code className="font-mono">/messages</code>
+          <span className="text-muted-foreground">Model</span>
+          <code className="font-mono">claude-opus-4.7</code>
+        </div>
+        <pre className="mt-4 overflow-x-auto rounded-md bg-muted p-3 text-[11px] leading-5"><code>{`curl ${baseUrl}/messages \\
+  -H "x-api-key: ${apiKey}" \\
+  -H "anthropic-version: 2023-06-01" \\
+  -H "Content-Type: application/json" \\
+  -d '{"model":"claude-opus-4.7","max_tokens":256,"messages":[{"role":"user","content":"hi"}]}'`}</code></pre>
+      </div>
+    </section>
+  )
+}
+
 export default function KeysPage() {
   const queryClient = useQueryClient()
   const [platform, setPlatform] = useState<Platform | ''>('')
@@ -430,6 +473,7 @@ export default function KeysPage() {
 
       <div className="space-y-8">
         <UnifiedKeySection />
+        <ApiGuideSection />
 
         <section>
           <div className="flex items-center justify-between gap-3 mb-3">

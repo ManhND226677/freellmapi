@@ -2,9 +2,9 @@
 
 # FreeLLMAPI
 
-**One OpenAI-compatible endpoint. Eleven free LLM providers. ~1B+ tokens per month.**
+**OpenAI-compatible and Anthropic-compatible endpoints. Free-tier LLM routing behind one key.**
 
-Aggregate the free tiers from Google, Groq, Cerebras, SambaNova, NVIDIA, Mistral, OpenRouter, GitHub Models, Cohere, Cloudflare, and Z.ai (Zhipu) behind a single `/v1/chat/completions` endpoint. Keys are stored encrypted. A router picks the best available model for each request, falls over to the next provider when one is rate-limited, and tracks per-key usage so you stay under every free-tier cap.
+Aggregate the free tiers from Google, Groq, Cerebras, SambaNova, NVIDIA, Mistral, OpenRouter, GitHub Models, Cohere, Cloudflare, Z.ai (Zhipu), and Anthropic-compatible Claude access behind `/v1/chat/completions` plus `/v1/messages`. Keys are stored encrypted. A router picks the best available model for each request, falls over to the next provider when one is rate-limited, and tracks per-key usage so you stay under every free-tier cap.
 
 [![CI](https://github.com/tashfeenahmed/freellmapi/actions/workflows/ci.yml/badge.svg)](https://github.com/tashfeenahmed/freellmapi/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
@@ -35,7 +35,7 @@ Aggregate the free tiers from Google, Groq, Cerebras, SambaNova, NVIDIA, Mistral
 
 Every serious AI lab now offers a free tier — a few million tokens a month, a few thousand requests a day. On its own each tier is a toy. Stacked together, they add up to roughly **1.3 billion tokens per month** of working inference capacity, across dozens of models from small-and-fast to reasonably capable.
 
-The problem is that stacking them by hand is painful: fourteen different SDKs, fourteen different rate limits, fourteen places a request can fail. FreeLLMAPI collapses that into one OpenAI-compatible endpoint. Point any OpenAI client library at your local server, and it routes transparently across whichever providers you've added keys for.
+The problem is that stacking them by hand is painful: different SDKs, different rate limits, and many places a request can fail. FreeLLMAPI collapses that into OpenAI-compatible and Anthropic-compatible endpoints. Point either client style at your local server, and it routes transparently across whichever providers you've added keys for.
 
 ## Supported providers
 
@@ -55,8 +55,8 @@ The problem is that stacking them by hand is painful: fourteen different SDKs, f
 <tr>
 <td align="center"><a href="https://cohere.com"><b>Cohere</b><br/>Command R+ · Command-A (trial)</a></td>
 <td align="center"><a href="https://docs.z.ai"><b>Z.ai (Zhipu)</b><br/>GLM-4.5 · GLM-4.7 Flash</a></td>
-<td align="center"><a href="https://build.nvidia.com"><b>NVIDIA</b><br/>NIM (disabled by default)</a></td>
-<td align="center"><i>Adding another? See <a href="#contributing">Contributing</a>.</i></td>
+<td align="center"><a href="https://docs.anthropic.com"><b>Anthropic</b><br/>Claude Opus/Sonnet/Haiku</a></td>
+<td align="center"><a href="https://build.nvidia.com"><b>NVIDIA</b><br/>NIM</a></td>
 </tr>
 </table>
 
@@ -74,6 +74,10 @@ The problem is that stacking them by hand is painful: fourteen different SDKs, f
 - **Admin dashboard** — React + Vite UI to manage keys, reorder the fallback chain, inspect analytics, and run prompts in a playground. Dark mode included.
 - **Analytics** — Per-request logging with latency, token counts, success rate, and per-provider breakdowns.
 - **Deploys to a Raspberry Pi** — Runs happily on a Pi 4 under PM2 behind nginx. ~40 MB RSS at idle.
+
+## Anthropic-compatible API
+
+`POST /v1/messages` accepts Anthropic Messages API requests. Use this mode for clients that only speak Anthropic, including Claude in Excel. The model `claude-opus-4.7` is a local compatibility facade: the router tries the configured Claude Opus route first, then falls back through the normal provider chain. Check `X-Routed-Via` to see the provider that actually served the call.
 
 ## Not yet supported
 
@@ -117,6 +121,8 @@ node server/dist/index.js     # server + dashboard both served on :3001
 ```
 
 ## Using the API
+
+The dashboard shows both API styles on the **Keys** page. Use the same unified `freellmapi-...` key for OpenAI-compatible and Anthropic-compatible requests.
 
 Any OpenAI-compatible client works. Examples:
 
@@ -205,6 +211,44 @@ print(final.choices[0].message.content)
 Works with `stream=True` as well — you'll get `delta.tool_calls` chunks followed by a `finish_reason: "tool_calls"` close. Under the hood, OpenAI-compatible providers (Groq, Cerebras, SambaNova, Mistral, OpenRouter, GitHub Models, HuggingFace, Cloudflare, Cohere compat) get the request passed through; Gemini requests get translated into Google's `functionDeclarations` / `functionResponse` shape and the response is translated back.
 
 Every response carries an `X-Routed-Via: <platform>/<model>` header so you can see which provider actually served each call. If a request fell over between providers, you'll also see `X-Fallback-Attempts: N`.
+
+### Anthropic-compatible clients
+
+Set the API/base URL to `http://localhost:3001/v1`, set the API key to your unified FreeLLMAPI key, and use model `claude-opus-4.7`.
+
+**curl**
+
+```bash
+curl http://localhost:3001/v1/messages \
+  -H "x-api-key: freellmapi-your-unified-key" \
+  -H "anthropic-version: 2023-06-01" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "claude-opus-4.7",
+    "max_tokens": 512,
+    "messages": [{"role": "user", "content": "hi"}]
+  }'
+```
+
+**Python**
+
+```python
+from anthropic import Anthropic
+
+client = Anthropic(
+    base_url="http://localhost:3001/v1",
+    api_key="freellmapi-your-unified-key",
+)
+
+message = client.messages.create(
+    model="claude-opus-4.7",
+    max_tokens=512,
+    messages=[{"role": "user", "content": "Summarise this sheet."}],
+)
+print(message.content[0].text)
+```
+
+Streaming is supported with Anthropic-style SSE events: `message_start`, `content_block_delta`, `message_delta`, and `message_stop`.
 
 ## Screenshots
 

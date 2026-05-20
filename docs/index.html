@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>FreeLLMAPI — One key. One billion free LLM tokens. Every month.</title>
-<meta name="description" content="A self-hosted, OpenAI-compatible proxy that routes across 11 free-tier LLM providers — Gemini, OpenRouter, Cerebras, Groq, Mistral, GitHub Models, SambaNova, Cohere, Cloudflare, Z.ai, NVIDIA. ~1B free tokens / month, 60 models." />
+<meta name="description" content="A self-hosted OpenAI-compatible and Anthropic-compatible proxy that routes across free-tier LLM providers, including Claude-compatible /v1/messages support." />
 <meta name="theme-color" content="#0a0a0a" />
 <link rel="canonical" href="https://tashfeenahmed.github.io/freellmapi/" />
 
@@ -12,7 +12,7 @@
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="FreeLLMAPI" />
 <meta property="og:title" content="FreeLLMAPI — 1B free LLM tokens / month" />
-<meta property="og:description" content="One self-hosted, OpenAI-compatible proxy across 11 free-tier LLM providers. 60 models. ~1B free tokens per month." />
+<meta property="og:description" content="One self-hosted OpenAI-compatible and Anthropic-compatible proxy across free-tier LLM providers." />
 <meta property="og:url" content="https://tashfeenahmed.github.io/freellmapi/" />
 <meta property="og:image" content="https://tashfeenahmed.github.io/freellmapi/og.png" />
 <meta property="og:image:width" content="1200" />
@@ -22,7 +22,7 @@
 <!-- Twitter -->
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="FreeLLMAPI — 1B free LLM tokens / month" />
-<meta name="twitter:description" content="One self-hosted, OpenAI-compatible proxy across 11 free-tier LLM providers. 60 models. ~1B free tokens per month." />
+<meta name="twitter:description" content="One self-hosted OpenAI-compatible and Anthropic-compatible proxy across free-tier LLM providers." />
 <meta name="twitter:image" content="https://tashfeenahmed.github.io/freellmapi/og.png" />
 <link rel="icon" href="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230a0a0a'/%3E%3Ccircle cx='16' cy='16' r='9' fill='%23ffffff'/%3E%3Ccircle cx='16' cy='16' r='3.2' fill='%230a0a0a'/%3E%3C/svg%3E" />
 <style>
@@ -294,7 +294,7 @@
     <header class="hero">
       <span class="badge"><span class="badge-dot"></span> 60 free models · 11 providers · self-hosted</span>
       <h1>One key.<br><span class="gradient">One billion</span> free tokens.<br>Every month.</h1>
-      <p class="subtitle">A self-hosted, OpenAI-compatible proxy that routes across every credible free-tier LLM provider. Bring your own keys; we just point requests at whichever provider still has budget left.</p>
+      <p class="subtitle">A self-hosted OpenAI-compatible and Anthropic-compatible proxy that routes across every credible free-tier LLM provider. Bring your own keys; we point OpenAI clients to /v1/chat/completions and Claude-only clients to /v1/messages.</p>
       <div class="cta-row">
         <a class="btn btn-primary" href="https://github.com/tashfeenahmed/freellmapi" target="_blank" rel="noopener">View on GitHub →</a>
         <a class="btn btn-secondary" href="#start">Quick start</a>
@@ -393,7 +393,7 @@
         <div class="step">
           <div class="step-num">3</div>
           <h3>Point your SDK</h3>
-          <p>Set <code>base_url</code> to your local proxy. Use any OpenAI-compatible client — Cursor, the SDK, curl, anything.</p>
+          <p>Set <code>base_url</code> to your local proxy. Use OpenAI-compatible clients through <code>/v1/chat/completions</code> or Anthropic-compatible clients through <code>/v1/messages</code>.</p>
         </div>
       </div>
 
@@ -412,7 +412,14 @@
 <span class="c"># 3. call it like OpenAI</span>
 <span class="prompt">$</span><span class="k">curl</span> http://localhost:3001/v1/chat/completions \
     -H <span class="s">"Content-Type: application/json"</span> \
-    -d <span class="s">'{"messages":[{"role":"user","content":"hi"}]}'</span></pre>
+    -d <span class="s">'{"messages":[{"role":"user","content":"hi"}]}'</span>
+<span class="blank"></span>
+<span class="c"># 4. or call it like Anthropic / Claude in Excel</span>
+<span class="prompt">$</span><span class="k">curl</span> http://localhost:3001/v1/messages \
+    -H <span class="s">"x-api-key: freellmapi-your-unified-key"</span> \
+    -H <span class="s">"anthropic-version: 2023-06-01"</span> \
+    -H <span class="s">"Content-Type: application/json"</span> \
+    -d <span class="s">'{"model":"claude-opus-4.7","max_tokens":256,"messages":[{"role":"user","content":"hi"}]}'</span></pre>
       </div>
     </section>
 

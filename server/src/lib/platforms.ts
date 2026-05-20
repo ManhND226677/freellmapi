@@ -14,6 +14,7 @@ export const PLATFORMS = [
   'kilo',
   'pollinations',
   'llm7',
+  'anthropic',
 ] as const;
 
 export type Platform = typeof PLATFORMS[number];

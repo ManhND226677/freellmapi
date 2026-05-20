@@ -992,10 +992,12 @@ function migrateModelsV12(db: Database.Database) {
   // We set null limits to indicate "provider-managed" — the AnthropicProvider
   // will handle 429s via the standard retry mechanism.
   //
-  // Claude model IDs match the official Anthropic API model strings:
-  //   claude-opus-4-7, claude-sonnet-4-6, claude-haiku-4-5-20250501
+  // Claude model IDs match official Anthropic API model strings. The
+  // /v1/messages route also accepts claude-opus-4.7 as a local facade for
+  // clients that require an Opus-looking model name.
   //
   // Intelligence / speed ranks are relative to the existing catalog:
+  // Current rows below use Opus 4.1, Opus 4, Sonnet 4, and Haiku 3.5.
   //   Opus 4.7 — rank 1: top-tier frontier model, competitive with GPT-4.5
   //   Sonnet 4.6 — rank 3: strong reasoning, similar to GPT-4o / Gemini 2.5
   //   Haiku 4.5 — rank 8: fast, cheap, beats most mid-tier open models
@@ -1005,17 +1007,25 @@ function migrateModelsV12(db: Database.Database) {
   `);
   const additions: Array<[string, string, string, number, number, string, number | null, number | null, number | null, number | null, string, number | null]> = [
     // Claude Opus 4.7 — flagship model. Context: 200k tokens.
-    // Pricing: ~$18 input / $54 output per 1M tokens (paid).
-    ['anthropic', 'claude-opus-4-7',       'Claude Opus 4.7',  1, 5, 'Frontier', null, null, null, null, '~$18/$54/M tokens',  200000],
+    // Pricing: ~$15 input / $75 output per 1M tokens (paid).
+    ['anthropic', 'claude-opus-4-1-20250805', 'Claude Opus 4.1', 1, 5, 'Frontier', null, null, null, null, '~$15/$75/M tokens', 200000],
     // Claude Sonnet 4.6 — balanced reasoning + speed. Context: 200k tokens.
     // Pricing: ~$3 input / $15 output per 1M tokens (paid).
-    ['anthropic', 'claude-sonnet-4-6',     'Claude Sonnet 4.6', 3, 4, 'Large',    null, null, null, null, '~$3/$15/M tokens',    200000],
+    ['anthropic', 'claude-opus-4-20250514',   'Claude Opus 4',   2, 5, 'Frontier', null, null, null, null, '~$15/$75/M tokens', 200000],
+    ['anthropic', 'claude-sonnet-4-20250514', 'Claude Sonnet 4', 3, 4, 'Large',    null, null, null, null, '~$3/$15/M tokens',   200000],
     // Claude Haiku 4.5 — fast, affordable. Context: 200k tokens.
     // Pricing: ~$0.8 input / $4 output per 1M tokens (paid).
-    ['anthropic', 'claude-haiku-4-5-20250501', 'Claude Haiku 4.5', 8, 3, 'Medium', null, null, null, null, '~$0.80/$4/M tokens', 200000],
+    ['anthropic', 'claude-3-5-haiku-20241022', 'Claude Haiku 3.5', 8, 3, 'Medium', null, null, null, null, '~$0.80/$4/M tokens', 200000],
   ];
 
   const apply = db.transaction(() => {
+    db.prepare(`
+      UPDATE models
+         SET enabled = 0
+       WHERE platform = 'anthropic'
+         AND model_id IN ('claude-opus-4-7', 'claude-sonnet-4-6', 'claude-haiku-4-5-20250501')
+    `).run();
+
     for (const a of additions) insert.run(...a);
     const missing = db.prepare(`
       SELECT m.id FROM models m
@@ -1026,6 +1036,24 @@ function migrateModelsV12(db: Database.Database) {
       const maxPriority = (db.prepare('SELECT COALESCE(MAX(priority), 0) AS mx FROM fallback_config').get() as { mx: number }).mx;
       const addFb = db.prepare('INSERT INTO fallback_config (model_db_id, priority, enabled) VALUES (?, ?, 1)');
       for (let i = 0; i < missing.length; i++) addFb.run(missing[i].id, maxPriority + i + 1);
+    }
+
+    const flag = db.prepare("SELECT value FROM settings WHERE key = 'migration_v12_anthropic_shield_priority'").get() as { value: string } | undefined;
+    if (!flag) {
+      const opus = db.prepare(`
+        SELECT id FROM models
+         WHERE platform = 'anthropic'
+           AND model_id = 'claude-opus-4-1-20250805'
+      `).get() as { id: number } | undefined;
+      if (opus) {
+        db.prepare('UPDATE fallback_config SET priority = priority + 1 WHERE model_db_id != ? AND priority >= 1').run(opus.id);
+        db.prepare(`
+          INSERT INTO fallback_config (model_db_id, priority, enabled)
+          VALUES (?, 1, 1)
+          ON CONFLICT(model_db_id) DO UPDATE SET priority = 1, enabled = 1
+        `).run(opus.id);
+      }
+      db.prepare("INSERT INTO settings (key, value) VALUES ('migration_v12_anthropic_shield_priority', '1')").run();
     }
   });
   apply();
