@@ -62,7 +62,7 @@ function UnifiedKeySection() {
   const [showKey, setShowKey] = useState(false)
   const [copied, setCopied] = useState(false)
 
-  const { data } = useQuery<{ apiKey: string }>({
+  const { data } = useQuery<{ apiKey: string; pinned?: boolean }>({
     queryKey: ['unified-key'],
     queryFn: () => apiFetch('/api/settings/api-key'),
   })
@@ -73,6 +73,7 @@ function UnifiedKeySection() {
   })
 
   const apiKey = data?.apiKey ?? ''
+  const pinned = data?.pinned === true
   const masked = apiKey ? apiKey.slice(0, 13) + '•'.repeat(32) : '…'
   const baseUrl = import.meta.env.DEV
     ? `http://${window.location.hostname}:${__SERVER_PORT__}/v1`
@@ -97,7 +98,8 @@ function UnifiedKeySection() {
           variant="ghost"
           size="sm"
           onClick={() => regenerate.mutate()}
-          disabled={regenerate.isPending}
+          disabled={pinned || regenerate.isPending}
+          title={pinned ? 'Pinned by FREEAPI_UNIFIED_API_KEY' : 'Regenerate unified API key'}
         >
           Regenerate
         </Button>
@@ -120,6 +122,12 @@ function UnifiedKeySection() {
         <code className="font-mono">{baseUrl}</code>
         <span className="text-muted-foreground">Endpoint</span>
         <code className="font-mono">/v1/chat/completions</code>
+        {pinned ? (
+          <>
+            <span className="text-muted-foreground">Key mode</span>
+            <code className="font-mono">pinned by env</code>
+          </>
+        ) : null}
       </div>
     </section>
   )

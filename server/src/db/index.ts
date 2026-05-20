@@ -931,6 +931,15 @@ function migrateModelsV11(db: Database.Database) {
 }
 
 function ensureUnifiedKey(db: Database.Database) {
+  const configuredKey = getConfiguredUnifiedApiKey();
+  if (configuredKey) {
+    db.prepare(`
+      INSERT INTO settings (key, value) VALUES ('unified_api_key', ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    `).run(configuredKey);
+    return;
+  }
+
   const existing = db.prepare("SELECT value FROM settings WHERE key = 'unified_api_key'").get() as { value: string } | undefined;
   if (!existing) {
     const key = `freellmapi-${crypto.randomBytes(24).toString('hex')}`;
@@ -939,13 +948,28 @@ function ensureUnifiedKey(db: Database.Database) {
   }
 }
 
+function getConfiguredUnifiedApiKey(): string | undefined {
+  const value = process.env.FREEAPI_UNIFIED_API_KEY ?? process.env.FREELLM_UNIFIED_API_KEY;
+  return value && value.trim() ? value.trim() : undefined;
+}
+
+export function isUnifiedApiKeyPinned(): boolean {
+  return getConfiguredUnifiedApiKey() !== undefined;
+}
+
 export function getUnifiedApiKey(): string {
+  const configuredKey = getConfiguredUnifiedApiKey();
+  if (configuredKey) return configuredKey;
+
   const db = getDb();
   const row = db.prepare("SELECT value FROM settings WHERE key = 'unified_api_key'").get() as { value: string };
   return row.value;
 }
 
 export function regenerateUnifiedKey(): string {
+  const configuredKey = getConfiguredUnifiedApiKey();
+  if (configuredKey) return configuredKey;
+
   const db = getDb();
   const key = `freellmapi-${crypto.randomBytes(24).toString('hex')}`;
   db.prepare("UPDATE settings SET value = ? WHERE key = 'unified_api_key'").run(key);
