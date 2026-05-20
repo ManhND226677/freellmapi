@@ -9,7 +9,7 @@ describe('AnthropicProvider', () => {
     vi.restoreAllMocks();
   });
 
-  it('calls Messages API with Anthropic headers and official model alias', async () => {
+  it('calls Messages API with Anthropic headers and gateway-safe Opus alias', async () => {
     let capturedUrl = '';
     let capturedHeaders: Record<string, string> = {};
     let capturedBody: any = null;
@@ -46,7 +46,7 @@ describe('AnthropicProvider', () => {
     expect(capturedUrl).toBe('https://api.anthropic.com/v1/messages');
     expect(capturedHeaders['x-api-key']).toBe('anthropic-key');
     expect(capturedHeaders['anthropic-version']).toBe('2023-06-01');
-    expect(capturedBody.model).toBe('claude-opus-4-1-20250805');
+    expect(capturedBody.model).toBe('claude-opus-4-7');
     expect(capturedBody.top_p).toBeUndefined();
     expect(capturedBody.system).toBe('be brief');
     expect(result.choices[0].message.content).toBe('hello');
