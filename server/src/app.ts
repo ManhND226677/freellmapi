@@ -3,11 +3,11 @@ import cors from 'cors';
 import helmet from 'helmet';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import fs from 'fs';
 import swaggerUi from 'swagger-ui-express';
 import { keysRouter } from './routes/keys.js';
 import { modelsRouter } from './routes/models.js';
 import { proxyRouter } from './routes/proxy.js';
+import { anthropicRouter } from './routes/anthropic.js';
 import { fallbackRouter } from './routes/fallback.js';
 import { analyticsRouter } from './routes/analytics.js';
 import { healthRouter } from './routes/health.js';
@@ -17,12 +17,9 @@ import { errorHandler } from './middleware/errorHandler.js';
 import { authRateLimiter, keysRateLimiter, apiRateLimiter } from './middleware/rateLimit.js';
 import { authRouter, requireDashboardAuth } from './auth.js';
 import { throttledRefresh } from './lib/db-refresh.js';
+import { openapiSpec } from './docs/openapi.js';
 
-// Load OpenAPI spec at runtime
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const openapiSpec = JSON.parse(
-  fs.readFileSync(path.join(__dirname, 'docs/openapi.json'), 'utf-8')
-);
 
 export function createApp() {
   const app = express();
@@ -44,7 +41,7 @@ export function createApp() {
       next();
       return;
     }
-    throttledRefresh().catch((err) =>
+    throttledRefresh().catch((err: unknown) =>
       console.error('[DB] Background refresh failed:', err)
     );
     next();
@@ -68,7 +65,8 @@ export function createApp() {
   app.use('/api/backup', apiRateLimiter, backupRouter);
   app.use('/api/models', apiRateLimiter, modelsRouter);
 
-  // OpenAI-compatible proxy
+  // Anthropic-compatible facade, then OpenAI-compatible proxy.
+  app.use('/v1', anthropicRouter);
   app.use('/v1', proxyRouter);
 
   // Health check
