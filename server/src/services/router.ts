@@ -4,6 +4,7 @@ import { decrypt } from '../lib/crypto.js';
 import { canMakeRequest, canUseTokens, isOnCooldown } from './ratelimit.js';
 import { throttledRefresh } from '../lib/db-refresh.js';
 import type { BaseProvider } from '../providers/base.js';
+import { resolveModelAlias } from '../db/index.js';
 
 interface ModelRow {
   id: number;
@@ -40,6 +41,8 @@ export interface RouteResult {
   keyId: number;
   platform: string;
   displayName: string;
+  isAlias?: boolean;
+  rotationStrategy?: 'random' | 'round_robin';
 }
 
 // Round-robin index per platform
@@ -178,6 +181,12 @@ export async function routeRequest(estimatedTokens = 1000, skipKeys?: Set<string
 
     if (keys.length === 0) continue;
 
+    // Special handling for Anthropic: register all keys for random rotation (9router-style)
+    if (model.platform === 'anthropic' && provider.platform === 'anthropic') {
+      const allDecryptedKeys = keys.map(k => decrypt(k.encrypted_key, k.iv, k.auth_tag));
+      (provider as any).registerKeys?.(allDecryptedKeys);
+    }
+
     // Get limits once for this model
     const limits = {
       rpm: model.rpm_limit,
@@ -190,41 +199,46 @@ export async function routeRequest(estimatedTokens = 1000, skipKeys?: Set<string
     const rrKey = `${model.platform}:${model.model_id}`;
     let idx = roundRobinIndex.get(rrKey) ?? 0;
 
-    for (let attempt = 0; attempt < keys.length; attempt++) {
-      const key = keys[idx % keys.length];
+    // Check if this is a random-rotation alias
+    const aliasInfo = resolveModelAlias(model.model_id);
+    const useRandomRotation = aliasInfo?.isAlias && aliasInfo.rotationStrategy === 'random';
+
+    // Select key based on rotation strategy
+    let selectedKey: KeyRow;
+    if (useRandomRotation && keys.length > 1) {
+      // Random rotation (9router-style) for aliases
+      const randomIdx = Math.floor(Math.random() * keys.length);
+      selectedKey = keys[randomIdx];
+    } else {
+      // Round-robin for normal models
+      selectedKey = keys[idx % keys.length];
       idx++;
-
-      const skipId = `${model.platform}:${model.model_id}:${key.id}`;
-      if (skipKeys?.has(skipId)) continue;
-
-      // Check cooldown (from previous 429s)
-      if (isOnCooldown(model.platform, model.model_id, key.id)) continue;
-
-      if (!canMakeRequest(model.platform, model.model_id, key.id, limits)) continue;
-      if (!canUseTokens(model.platform, model.model_id, key.id, estimatedTokens, limits)) continue;
-
-      // We found a working key for this model!
-      roundRobinIndex.set(rrKey, idx);
-      const decryptedKey = decrypt(key.encrypted_key, key.iv, key.auth_tag);
-
-      return {
-        provider,
-        modelId: model.model_id,
-        modelDbId: model.id,
-        apiKey: decryptedKey,
-        keyId: key.id,
-        platform: model.platform,
-        displayName: model.display_name,
-      };
     }
 
-    // If we reach here, this specific model has NO available keys.
-    // Update round-robin index even if we failed so we don't get stuck.
+    const skipId = `${model.platform}:${model.model_id}:${selectedKey.id}`;
+    if (skipKeys?.has(skipId)) continue;
+
+    // Check cooldown (from previous 429s)
+    if (isOnCooldown(model.platform, model.model_id, selectedKey.id)) continue;
+
+    if (!canMakeRequest(model.platform, model.model_id, selectedKey.id, limits)) continue;
+    if (!canUseTokens(model.platform, model.model_id, selectedKey.id, estimatedTokens, limits)) continue;
+
+    // We found a working key for this model!
     roundRobinIndex.set(rrKey, idx);
-    
-    // We don't explicitly penalize the model here because the fact that we 
-    // couldn't find a key means we will naturally move to the next model 
-    // in the `sortedChain` for THIS specific request.
+    const decryptedKey = decrypt(selectedKey.encrypted_key, selectedKey.iv, selectedKey.auth_tag);
+
+    return {
+      provider,
+      modelId: model.model_id,
+      modelDbId: model.id,
+      apiKey: decryptedKey,
+      keyId: selectedKey.id,
+      platform: model.platform,
+      displayName: model.display_name,
+      isAlias: aliasInfo?.isAlias ?? false,
+      rotationStrategy: aliasInfo?.rotationStrategy,
+    };
   }
 
   const err = new Error('All models exhausted. Add more API keys or wait for rate limits to reset.') as any;
