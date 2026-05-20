@@ -6,6 +6,7 @@ import type { ChatMessage } from '@freellmapi/shared/types.js';
 import { routeRequest, recordRateLimitHit, recordSuccess, type RouteResult } from '../services/router.js';
 import { recordRequest, recordTokens, setCooldown } from '../services/ratelimit.js';
 import { getDb, getUnifiedApiKey, persistDbSnapshot } from '../db/index.js';
+import { getCache, setCache, generateCacheKey, hashMessages } from '../lib/cache.js';
 
 export const proxyRouter = Router();
 
@@ -290,8 +291,8 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     let route: RouteResult;
-    try {
-      route = routeRequest(estimatedTotal, skipKeys.size > 0 ? skipKeys : undefined, preferredModel);
+      try {
+        route = await routeRequest(estimatedTotal, skipKeys.size > 0 ? skipKeys : undefined, preferredModel);
     } catch (err: any) {
       // No more models available
       if (lastError) {
@@ -368,7 +369,26 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
           throw streamErr;
         }
       } else {
-        const result = await route.provider.chatCompletion(
+        // Cache lookup for non-streaming, non-tool-call requests
+        const canCache = !stream && !tools && !tool_choice && attempt === 0;
+        const messagesHash = hashMessages(messages);
+        const cacheKey = canCache
+          ? generateCacheKey(route.modelId, messagesHash, { temperature, max_tokens, top_p })
+          : null;
+
+        let result;
+        if (cacheKey) {
+          const cached = getCache<typeof result>(cacheKey);
+          if (cached) {
+            res.setHeader('X-Routed-Via', `${route.platform}/${route.modelId} (cached)`);
+            res.setHeader('X-Cache', 'HIT');
+            res.json(cached);
+            return;
+          }
+          res.setHeader('X-Cache', 'MISS');
+        }
+
+        result = await route.provider.chatCompletion(
           route.apiKey, messages, route.modelId,
           { temperature, max_tokens, top_p, tools, tool_choice, parallel_tool_calls },
         );
@@ -377,6 +397,11 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
         recordTokens(route.platform, route.modelId, route.keyId, totalTokens);
         recordSuccess(route.modelDbId);
         setStickyModel(messages, route.modelDbId);
+
+        // Cache the successful response (cache key only set for non-streaming non-tool-call)
+        if (cacheKey) {
+          setCache(cacheKey, result);
+        }
 
         res.setHeader('X-Routed-Via', `${route.platform}/${route.modelId}`);
         if (attempt > 0) res.setHeader('X-Fallback-Attempts', String(attempt));

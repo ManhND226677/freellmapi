@@ -68,6 +68,7 @@ export function initDb(dbPath?: string): Database.Database {
   migrateModelsV9(db);
   migrateModelsV10(db);
   migrateModelsV11(db);
+  migrateModelsV12(db);
   ensureUnifiedKey(db);
 
   console.log(`Database initialized at ${resolvedPath}`);
@@ -963,6 +964,55 @@ function migrateModelsV11(db: Database.Database) {
     ['llm7',         'codestral-latest',                          'Codestral (LLM7)',              16, 8,  'Medium',   100, null, null, null, '~2-3M (100/hr)',  32000],
     ['llm7',         'ministral-8b-2512',                         'Ministral 8B (LLM7)',           28, 10, 'Small',    100, null, null, null, '~2-3M (100/hr)', 131072],
     ['llm7',         'GLM-4.6V-Flash',                            'GLM-4.6V Flash (LLM7)',         15, 9,  'Large',    100, null, null, null, '~2-3M (100/hr)', 131072],
+  ];
+
+  const apply = db.transaction(() => {
+    for (const a of additions) insert.run(...a);
+    const missing = db.prepare(`
+      SELECT m.id FROM models m
+      LEFT JOIN fallback_config f ON m.id = f.model_db_id
+      WHERE f.id IS NULL ORDER BY m.intelligence_rank ASC
+    `).all() as { id: number }[];
+    if (missing.length > 0) {
+      const maxPriority = (db.prepare('SELECT COALESCE(MAX(priority), 0) AS mx FROM fallback_config').get() as { mx: number }).mx;
+      const addFb = db.prepare('INSERT INTO fallback_config (model_db_id, priority, enabled) VALUES (?, ?, 1)');
+      for (let i = 0; i < missing.length; i++) addFb.run(missing[i].id, maxPriority + i + 1);
+    }
+  });
+  apply();
+}
+
+function migrateModelsV12(db: Database.Database) {
+  // Add Claude models via the Anthropic Messages API.
+  // Anthropic uses a distinct non-OpenAI endpoint (/v1/messages) — routed via
+  // the AnthropicProvider registered in server/src/providers/index.ts.
+  //
+  // Rate limits: Anthropic's free tier is invite-only and very limited.
+  // Paid tier limits are generous (~50 RPM / 200k TPM for most tiers).
+  // We set null limits to indicate "provider-managed" — the AnthropicProvider
+  // will handle 429s via the standard retry mechanism.
+  //
+  // Claude model IDs match the official Anthropic API model strings:
+  //   claude-opus-4-7, claude-sonnet-4-6, claude-haiku-4-5-20250501
+  //
+  // Intelligence / speed ranks are relative to the existing catalog:
+  //   Opus 4.7 — rank 1: top-tier frontier model, competitive with GPT-4.5
+  //   Sonnet 4.6 — rank 3: strong reasoning, similar to GPT-4o / Gemini 2.5
+  //   Haiku 4.5 — rank 8: fast, cheap, beats most mid-tier open models
+  const insert = db.prepare(`
+    INSERT OR IGNORE INTO models (platform, model_id, display_name, intelligence_rank, speed_rank, size_label, rpm_limit, rpd_limit, tpm_limit, tpd_limit, monthly_token_budget, context_window)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const additions: Array<[string, string, string, number, number, string, number | null, number | null, number | null, number | null, string, number | null]> = [
+    // Claude Opus 4.7 — flagship model. Context: 200k tokens.
+    // Pricing: ~$18 input / $54 output per 1M tokens (paid).
+    ['anthropic', 'claude-opus-4-7',       'Claude Opus 4.7',  1, 5, 'Frontier', null, null, null, null, '~$18/$54/M tokens',  200000],
+    // Claude Sonnet 4.6 — balanced reasoning + speed. Context: 200k tokens.
+    // Pricing: ~$3 input / $15 output per 1M tokens (paid).
+    ['anthropic', 'claude-sonnet-4-6',     'Claude Sonnet 4.6', 3, 4, 'Large',    null, null, null, null, '~$3/$15/M tokens',    200000],
+    // Claude Haiku 4.5 — fast, affordable. Context: 200k tokens.
+    // Pricing: ~$0.8 input / $4 output per 1M tokens (paid).
+    ['anthropic', 'claude-haiku-4-5-20250501', 'Claude Haiku 4.5', 8, 3, 'Medium', null, null, null, null, '~$0.80/$4/M tokens', 200000],
   ];
 
   const apply = db.transaction(() => {

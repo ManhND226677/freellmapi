@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate, NavLink } from 'react-router-do
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { LogOut } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { ErrorBoundary } from '@/components/error-boundary'
 import KeysPage from '@/pages/KeysPage'
 import PlaygroundPage from '@/pages/PlaygroundPage'
 import FallbackPage from '@/pages/FallbackPage'
@@ -102,10 +103,10 @@ function DashboardShell() {
       <main className="max-w-6xl mx-auto px-6 py-8">
         <Routes>
           <Route path="/" element={<Navigate to="/playground" replace />} />
-          <Route path="/playground" element={<PlaygroundPage />} />
-          <Route path="/keys" element={<KeysPage />} />
-          <Route path="/fallback" element={<FallbackPage />} />
-          <Route path="/analytics" element={<AnalyticsPage />} />
+          <Route path="/playground" element={<ErrorBoundary><PlaygroundPage /></ErrorBoundary>} />
+          <Route path="/keys" element={<ErrorBoundary><KeysPage /></ErrorBoundary>} />
+          <Route path="/fallback" element={<ErrorBoundary><FallbackPage /></ErrorBoundary>} />
+          <Route path="/analytics" element={<ErrorBoundary><AnalyticsPage /></ErrorBoundary>} />
           <Route path="/test" element={<Navigate to="/playground" replace />} />
           <Route path="/health" element={<Navigate to="/keys" replace />} />
         </Routes>
