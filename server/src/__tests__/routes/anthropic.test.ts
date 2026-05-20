@@ -63,6 +63,26 @@ describe('Anthropic-compatible routes', () => {
     expect(body).toEqual({ type: 'messages_endpoint', status: 'ok' });
   });
 
+  it('does not use localhost auth bypass on Vercel', async () => {
+    const previousVercel = process.env.VERCEL;
+    process.env.VERCEL = '1';
+    try {
+      const { status, body } = await request(app, 'GET', '/v1/models', undefined, {
+        'anthropic-version': '2023-06-01',
+        'x-api-key': 'freellmapi-invalid',
+      });
+
+      expect(status).toBe(401);
+      expect(body.error.type).toBe('authentication_error');
+    } finally {
+      if (previousVercel === undefined) {
+        delete process.env.VERCEL;
+      } else {
+        process.env.VERCEL = previousVercel;
+      }
+    }
+  });
+
   it('accepts /v1/messages and falls back through normal providers', async () => {
     const addKey = await request(app, 'POST', '/api/keys', {
       platform: 'groq',

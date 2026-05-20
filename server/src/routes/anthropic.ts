@@ -33,7 +33,10 @@ function timingSafeStringEqual(provided: string, expected: string): boolean {
 }
 
 function authenticate(req: Request, res: Response): boolean {
-  const isLocal = req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '::ffff:127.0.0.1';
+  const allowLocalBypass = process.env.NODE_ENV !== 'production' && process.env.VERCEL !== '1';
+  const isLocal = allowLocalBypass && (
+    req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '::ffff:127.0.0.1'
+  );
   if (isLocal) return true;
 
   const token = req.headers['x-api-key']?.toString()
