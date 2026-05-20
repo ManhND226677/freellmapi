@@ -71,6 +71,9 @@ export function initDb(dbPath?: string): Database.Database {
   migrateModelsV12(db);
   ensureUnifiedKey(db);
 
+  // Register model aliases
+  registerModelAliases(db);
+
   console.log(`Database initialized at ${resolvedPath}`);
   return db;
 }
@@ -161,6 +164,14 @@ function createTables(db: Database.Database) {
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS model_aliases (
+      alias TEXT PRIMARY KEY,
+      target_platform TEXT NOT NULL,
+      target_model_id TEXT NOT NULL,
+      rotation_strategy TEXT NOT NULL DEFAULT 'random',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
     CREATE INDEX IF NOT EXISTS idx_requests_created_at ON requests(created_at);
@@ -1114,4 +1125,76 @@ export function setUnifiedApiKey(key: string): boolean {
     ON CONFLICT(key) DO UPDATE SET value = excluded.value
   `).run(key);
   return true;
+}
+
+// ── Model Aliases (9router-style) ──────────────────────────────────────────
+
+export interface ModelAlias {
+  alias: string;
+  targetPlatform: string;
+  targetModelId: string;
+  rotationStrategy: 'random' | 'round_robin';
+}
+
+function registerModelAliases(db: Database.Database) {
+  // Seed default alias: claude-opus-4-6 → resolves to claude-opus-4-7 with random key rotation
+  const aliases: Array<[string, string, string, string]> = [
+    // 9router-style alias: claude-opus-4-6 maps to claude-opus-4-7 on anthropic platform
+    ['claude-opus-4-6', 'anthropic', 'claude-opus-4-7', 'random'],
+    // Add more aliases as needed
+    // ['gpt-5', 'github', 'openai/gpt-5', 'random'],
+    // ['claude-opus', 'anthropic', 'claude-opus-4-7', 'random'],
+  ];
+
+  const insertAlias = db.prepare(`
+    INSERT OR IGNORE INTO model_aliases (alias, target_platform, target_model_id, rotation_strategy)
+    VALUES (?, ?, ?, ?)
+  `);
+
+  for (const [alias, platform, modelId, strategy] of aliases) {
+    insertAlias.run(alias, platform, modelId, strategy);
+  }
+}
+
+export interface ResolvedModel {
+  platform: string;
+  modelId: string;
+  isAlias: boolean;
+  rotationStrategy: 'random' | 'round_robin';
+}
+
+/**
+ * Resolve a model alias to its actual platform/model.
+ * Returns the resolved model info if the input is an alias, otherwise null.
+ */
+export function resolveModelAlias(modelId: string): ResolvedModel | null {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT target_platform, target_model_id, rotation_strategy
+    FROM model_aliases
+    WHERE alias = ?
+  `).get(modelId) as { target_platform: string; target_model_id: string; rotation_strategy: string } | undefined;
+
+  if (!row) return null;
+
+  return {
+    platform: row.target_platform,
+    modelId: row.target_model_id,
+    isAlias: true,
+    rotationStrategy: row.rotation_strategy as 'random' | 'round_robin',
+  };
+}
+
+/**
+ * List all model aliases.
+ */
+export function listModelAliases(): ModelAlias[] {
+  const db = getDb();
+  const rows = db.prepare('SELECT * FROM model_aliases').all() as any[];
+  return rows.map(r => ({
+    alias: r.alias,
+    targetPlatform: r.target_platform,
+    targetModelId: r.target_model_id,
+    rotationStrategy: r.rotation_strategy,
+  }));
 }

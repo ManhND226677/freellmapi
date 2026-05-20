@@ -5,7 +5,7 @@ import { z } from 'zod';
 import type { ChatMessage } from '@freellmapi/shared/types.js';
 import { routeRequest, recordRateLimitHit, recordSuccess, type RouteResult } from '../services/router.js';
 import { recordRequest, recordTokens, setCooldown } from '../services/ratelimit.js';
-import { getDb, getUnifiedApiKey, persistDbSnapshot } from '../db/index.js';
+import { getDb, getUnifiedApiKey, persistDbSnapshot, resolveModelAlias } from '../db/index.js';
 import { getCache, setCache, generateCacheKey, hashMessages } from '../lib/cache.js';
 
 export const proxyRouter = Router();
@@ -264,22 +264,39 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
   // different model would be surprising to OpenAI-compatible clients.
   // Sticky-session is the fallback when no `model` field was sent at all.
   let preferredModel: number | undefined;
+  let requestedModelId = requestedModel; // Store original for alias check
   if (requestedModel) {
     const db = getDb();
-    const enabled = db.prepare('SELECT id FROM models WHERE model_id = ? AND enabled = 1').get(requestedModel) as { id: number } | undefined;
-    if (enabled) {
-      preferredModel = enabled.id;
-    } else {
-      const disabled = db.prepare('SELECT id FROM models WHERE model_id = ?').get(requestedModel) as { id: number } | undefined;
-      const reason = disabled ? 'is disabled' : 'is not in the catalog';
-      res.status(400).json({
-        error: {
-          message: `Model '${requestedModel}' ${reason}. Omit the 'model' field to auto-route, or call /v1/models for the available list.`,
-          type: 'invalid_request_error',
-          code: 'model_not_found',
-        },
-      });
-      return;
+
+    // First check if it's a model alias (9router-style)
+    const aliasInfo = resolveModelAlias(requestedModel);
+    if (aliasInfo) {
+      // Use the resolved model ID for routing
+      requestedModelId = aliasInfo.modelId;
+      const resolved = db.prepare('SELECT id FROM models WHERE model_id = ? AND platform = ? AND enabled = 1')
+        .get(aliasInfo.modelId, aliasInfo.platform) as { id: number } | undefined;
+      if (resolved) {
+        preferredModel = resolved.id;
+      }
+    }
+
+    // Fallback to normal lookup if not an alias or alias not found in DB
+    if (preferredModel === undefined) {
+      const enabled = db.prepare('SELECT id FROM models WHERE model_id = ? AND enabled = 1').get(requestedModel) as { id: number } | undefined;
+      if (enabled) {
+        preferredModel = enabled.id;
+      } else {
+        const disabled = db.prepare('SELECT id FROM models WHERE model_id = ?').get(requestedModel) as { id: number } | undefined;
+        const reason = disabled ? 'is disabled' : 'is not in the catalog';
+        res.status(400).json({
+          error: {
+            message: `Model '${requestedModel}' ${reason}. Omit the 'model' field to auto-route, or call /v1/models for the available list.`,
+            type: 'invalid_request_error',
+            code: 'model_not_found',
+          },
+        });
+        return;
+      }
     }
   } else {
     preferredModel = getStickyModel(messages);
