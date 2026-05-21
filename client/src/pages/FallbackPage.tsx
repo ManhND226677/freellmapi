@@ -28,6 +28,8 @@ interface FallbackEntry {
   effectivePriority: number
   penalty: number
   rateLimitHits: number
+  avgLatencyMs: number | null
+  latencySamples: number
   enabled: boolean
   platform: string
   modelId: string
@@ -181,6 +183,11 @@ function SortableModelRow({
               −{entry.penalty} penalty
             </span>
           )}
+          {entry.avgLatencyMs != null && (
+            <span className="text-xs text-muted-foreground">
+              {entry.avgLatencyMs} ms avg
+            </span>
+          )}
         </div>
         <div className="flex gap-3 mt-0.5 text-xs text-muted-foreground tabular-nums">
           <span>Intel #{entry.intelligenceRank}</span>
@@ -277,7 +284,7 @@ export default function FallbackPage() {
     <div>
       <PageHeader
         title="Fallback chain"
-        description="Drag to reorder. Requests try models top-to-bottom until one succeeds."
+        description="Drag to reorder the baseline. Runtime routing prefers the lowest recent provider latency, then falls back to this order."
         actions={
           <>
             <Button variant="outline" size="sm" onClick={() => sortMutation.mutate('intelligence')} disabled={sortMutation.isPending}>
@@ -288,6 +295,9 @@ export default function FallbackPage() {
             </Button>
             <Button variant="outline" size="sm" onClick={() => sortMutation.mutate('budget')} disabled={sortMutation.isPending}>
               Sort by budget
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => sortMutation.mutate('latency')} disabled={sortMutation.isPending}>
+              Sort by latency
             </Button>
           </>
         }

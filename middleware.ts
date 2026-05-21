@@ -1,24 +1,35 @@
 import { next } from '@vercel/functions';
 
 const SESSION_COOKIE = 'freellmapi_session';
-const DEFAULT_USERNAME = 'nguyenhoang287';
-const DEFAULT_PASSWORD = 'Matkhau1@';
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-function authUsername(): string {
-  return process.env.FREELLM_AUTH_USERNAME ?? process.env.AUTH_USERNAME ?? DEFAULT_USERNAME;
+function configuredValue(...values: Array<string | undefined>): string | null {
+  const value = values.find(v => typeof v === 'string' && v.length > 0);
+  return value ?? null;
 }
 
-function authPassword(): string {
-  return process.env.FREELLM_AUTH_PASSWORD ?? process.env.AUTH_PASSWORD ?? DEFAULT_PASSWORD;
+function authUsername(): string | null {
+  return configuredValue(process.env.FREELLM_AUTH_USERNAME, process.env.AUTH_USERNAME);
+}
+
+function authPassword(): string | null {
+  return configuredValue(process.env.FREELLM_AUTH_PASSWORD, process.env.AUTH_PASSWORD);
 }
 
 function authSecret(): string {
-  return process.env.FREELLM_AUTH_SECRET
-    ?? process.env.AUTH_SECRET
-    ?? process.env.ENCRYPTION_KEY
-    ?? `${authUsername()}:${authPassword()}`;
+  const explicitSecret = configuredValue(
+    process.env.FREELLM_AUTH_SECRET,
+    process.env.AUTH_SECRET,
+    process.env.ENCRYPTION_KEY,
+  );
+  if (explicitSecret) return explicitSecret;
+
+  const username = authUsername();
+  const password = authPassword();
+  if (username && password) return `${username}:${password}`;
+
+  throw new Error('Dashboard authentication is not configured');
 }
 
 function parseCookies(request: Request): Record<string, string> {
@@ -72,6 +83,9 @@ async function sign(value: string): Promise<string> {
 async function hasValidSession(request: Request): Promise<boolean> {
   const token = parseCookies(request)[SESSION_COOKIE];
   if (!token) return false;
+  const expectedUsername = authUsername();
+  const expectedPassword = authPassword();
+  if (!expectedUsername || !expectedPassword) return false;
 
   const [encoded, signature] = token.split('.');
   if (!encoded || !signature || !safeEqual(signature, await sign(encoded))) return false;
@@ -86,7 +100,7 @@ async function hasValidSession(request: Request): Promise<boolean> {
       && typeof payload.exp === 'number'
       && typeof payload.nonce === 'string'
       && payload.exp > Math.floor(Date.now() / 1000)
-      && safeEqual(payload.sub, authUsername());
+      && safeEqual(payload.sub, expectedUsername);
   } catch {
     return false;
   }

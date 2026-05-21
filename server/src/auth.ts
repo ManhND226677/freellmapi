@@ -4,8 +4,6 @@ import type { NextFunction, Request, Response } from 'express';
 
 const SESSION_COOKIE = 'freellmapi_session';
 const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;
-const DEFAULT_USERNAME = 'nguyenhoang287';
-const DEFAULT_PASSWORD = 'Matkhau1@';
 
 type SessionPayload = {
   sub: string;
@@ -13,19 +11,32 @@ type SessionPayload = {
   nonce: string;
 };
 
-function authUsername(): string {
-  return process.env.FREELLM_AUTH_USERNAME ?? process.env.AUTH_USERNAME ?? DEFAULT_USERNAME;
+function configuredValue(...values: Array<string | undefined>): string | null {
+  const value = values.find(v => typeof v === 'string' && v.length > 0);
+  return value ?? null;
 }
 
-function authPassword(): string {
-  return process.env.FREELLM_AUTH_PASSWORD ?? process.env.AUTH_PASSWORD ?? DEFAULT_PASSWORD;
+function authUsername(): string | null {
+  return configuredValue(process.env.FREELLM_AUTH_USERNAME, process.env.AUTH_USERNAME);
+}
+
+function authPassword(): string | null {
+  return configuredValue(process.env.FREELLM_AUTH_PASSWORD, process.env.AUTH_PASSWORD);
 }
 
 function authSecret(): string {
-  return process.env.FREELLM_AUTH_SECRET
-    ?? process.env.AUTH_SECRET
-    ?? process.env.ENCRYPTION_KEY
-    ?? `${authUsername()}:${authPassword()}`;
+  const explicitSecret = configuredValue(
+    process.env.FREELLM_AUTH_SECRET,
+    process.env.AUTH_SECRET,
+    process.env.ENCRYPTION_KEY,
+  );
+  if (explicitSecret) return explicitSecret;
+
+  const username = authUsername();
+  const password = authPassword();
+  if (username && password) return `${username}:${password}`;
+
+  throw new Error('Dashboard authentication is not configured');
 }
 
 function safeEqual(provided: string, expected: string): boolean {
@@ -51,6 +62,9 @@ function createSessionToken(username: string): string {
 
 function parseSessionToken(token: string | undefined): SessionPayload | null {
   if (!token) return null;
+  const expectedUsername = authUsername();
+  const expectedPassword = authPassword();
+  if (!expectedUsername || !expectedPassword) return null;
 
   const [encoded, signature] = token.split('.');
   if (!encoded || !signature || !safeEqual(signature, sign(encoded))) return null;
@@ -61,7 +75,7 @@ function parseSessionToken(token: string | undefined): SessionPayload | null {
       return null;
     }
     if (payload.exp <= Math.floor(Date.now() / 1000)) return null;
-    if (!safeEqual(payload.sub, authUsername())) return null;
+    if (!safeEqual(payload.sub, expectedUsername)) return null;
     return payload as SessionPayload;
   } catch {
     return null;
@@ -127,10 +141,22 @@ authRouter.get('/session', (req: Request, res: Response) => {
 
 authRouter.post('/login', (req: Request, res: Response) => {
   const { username, password } = req.body ?? {};
+  const expectedUsername = authUsername();
+  const expectedPassword = authPassword();
+
+  if (!expectedUsername || !expectedPassword) {
+    res.status(503).json({
+      error: {
+        message: 'Dashboard authentication is not configured. Set FREELLM_AUTH_USERNAME and FREELLM_AUTH_PASSWORD.',
+      },
+    });
+    return;
+  }
+
   const validCredentials = typeof username === 'string'
     && typeof password === 'string'
-    && safeEqual(username, authUsername())
-    && safeEqual(password, authPassword());
+    && safeEqual(username, expectedUsername)
+    && safeEqual(password, expectedPassword);
 
   if (!validCredentials) {
     res.status(401).json({ error: { message: 'Invalid username or password' } });

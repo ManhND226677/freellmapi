@@ -12,6 +12,7 @@ describe('Router', () => {
   beforeEach(() => {
     const db = getDb();
     db.prepare('DELETE FROM api_keys').run();
+    db.prepare('DELETE FROM requests').run();
     // Reset fallback order to intelligence ranking
     const models = db.prepare('SELECT id, intelligence_rank FROM models ORDER BY intelligence_rank ASC').all() as any[];
     const update = db.prepare('UPDATE fallback_config SET priority = ? WHERE model_db_id = ?');
@@ -57,6 +58,33 @@ describe('Router', () => {
     // (rank 6). With keys for both platforms, Google wins.
     const result = await routeRequest();
     expect(result.platform).toBe('google');
+  });
+
+  it('should prefer the provider with lower recent latency', async () => {
+    const db = getDb();
+
+    const googleKey = encrypt('test-google-key');
+    db.prepare(`
+      INSERT INTO api_keys (platform, label, encrypted_key, iv, auth_tag, status, enabled)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run('google', 'test', googleKey.encrypted, googleKey.iv, googleKey.authTag, 'healthy', 1);
+
+    const groqKey = encrypt('test-groq-key');
+    db.prepare(`
+      INSERT INTO api_keys (platform, label, encrypted_key, iv, auth_tag, status, enabled)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run('groq', 'test', groqKey.encrypted, groqKey.iv, groqKey.authTag, 'healthy', 1);
+
+    db.prepare(`
+      INSERT INTO requests (platform, model_id, status, latency_ms)
+      VALUES (?, ?, ?, ?), (?, ?, ?, ?)
+    `).run(
+      'google', 'gemini-3.1-pro-preview', 'success', 2200,
+      'groq', 'openai/gpt-oss-120b', 'success', 250,
+    );
+
+    const result = await routeRequest();
+    expect(result.platform).toBe('groq');
   });
 
   it('should skip disabled keys', async () => {

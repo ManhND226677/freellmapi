@@ -31,6 +31,13 @@ interface FallbackRow {
   model_db_id: number;
   priority: number;
   enabled: number;
+  platform: string;
+}
+
+interface ProviderLatencyRow {
+  platform: string;
+  avg_latency_ms: number;
+  samples: number;
 }
 
 export interface RouteResult {
@@ -143,16 +150,38 @@ export async function routeRequest(estimatedTokens = 1000, skipKeys?: Set<string
 
   // Get fallback chain ordered by priority
   const fallbackChain = db.prepare(`
-    SELECT fc.model_db_id, fc.priority, fc.enabled
+    SELECT fc.model_db_id, fc.priority, fc.enabled, m.platform
     FROM fallback_config fc
+    JOIN models m ON m.id = fc.model_db_id
     ORDER BY fc.priority ASC
   `).all() as FallbackRow[];
 
-  // Apply dynamic penalties: sort by (base priority + penalty)
+  const recentLatencies = db.prepare(`
+    SELECT platform, AVG(latency_ms) AS avg_latency_ms, COUNT(*) AS samples
+    FROM requests
+    WHERE status = 'success'
+      AND latency_ms > 0
+      AND created_at >= datetime('now', '-24 hours')
+    GROUP BY platform
+  `).all() as ProviderLatencyRow[];
+  const latencyByPlatform = new Map(recentLatencies.map(row => [row.platform, row.avg_latency_ms]));
+
+  // Apply dynamic penalties and recent provider latency.
   const sortedChain = fallbackChain.map(entry => ({
     ...entry,
     effectivePriority: entry.priority + getPenalty(entry.model_db_id),
-  })).sort((a, b) => a.effectivePriority - b.effectivePriority);
+    avgLatencyMs: latencyByPlatform.get(entry.platform),
+  })).sort((a, b) => {
+    const aLatency = a.avgLatencyMs;
+    const bLatency = b.avgLatencyMs;
+    const aHasLatency = typeof aLatency === 'number';
+    const bHasLatency = typeof bLatency === 'number';
+    if (aHasLatency && bHasLatency && aLatency !== bLatency) {
+      return aLatency - bLatency;
+    }
+    if (aHasLatency !== bHasLatency) return aHasLatency ? -1 : 1;
+    return a.effectivePriority - b.effectivePriority;
+  });
 
   // Sticky session: move preferred model to front of chain
   if (preferredModelDbId) {

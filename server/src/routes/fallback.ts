@@ -31,14 +31,27 @@ fallbackRouter.get('/', (_req: Request, res: Response) => {
   const penalties = getAllPenalties();
   const penaltyMap = new Map(penalties.map(p => [p.modelDbId, p]));
 
+  const latencyRows = db.prepare(`
+    SELECT platform, AVG(latency_ms) AS avg_latency_ms, COUNT(*) AS samples
+    FROM requests
+    WHERE status = 'success'
+      AND latency_ms > 0
+      AND created_at >= datetime('now', '-24 hours')
+    GROUP BY platform
+  `).all() as Array<{ platform: string; avg_latency_ms: number; samples: number }>;
+  const latencyMap = new Map(latencyRows.map(row => [row.platform, row]));
+
   res.json(rows.map(r => {
     const penalty = penaltyMap.get(r.model_db_id);
+    const latency = latencyMap.get(r.platform);
     return {
       modelDbId: r.model_db_id,
       priority: r.priority,
       effectivePriority: r.priority + (penalty?.penalty ?? 0),
       penalty: penalty?.penalty ?? 0,
       rateLimitHits: penalty?.count ?? 0,
+      avgLatencyMs: latency ? Math.round(latency.avg_latency_ms) : null,
+      latencySamples: latency?.samples ?? 0,
       enabled: r.enabled === 1,
       platform: r.platform,
       modelId: r.model_id,
@@ -90,18 +103,31 @@ const SORT_PRESETS: Record<string, string> = {
   intelligence: 'm.intelligence_rank ASC',
   speed: 'm.speed_rank ASC',
   budget: "CASE m.monthly_token_budget WHEN '~120M' THEN 1 WHEN '~50-100M' THEN 2 WHEN '~30M' THEN 3 WHEN '~18-45M' THEN 4 WHEN '~18M' THEN 5 WHEN '~15M' THEN 6 WHEN '~12M' THEN 7 WHEN '~6M' THEN 8 WHEN '~5-10M' THEN 9 WHEN '~4M' THEN 10 ELSE 11 END ASC",
+  latency: "CASE WHEN recent.avg_latency_ms IS NULL THEN 1 ELSE 0 END ASC, recent.avg_latency_ms ASC, m.speed_rank ASC",
 };
 
 fallbackRouter.post('/sort/:preset', async (req: Request, res: Response) => {
   const preset = String(req.params.preset);
   const orderBy = SORT_PRESETS[preset];
   if (!orderBy) {
-    res.status(400).json({ error: { message: `Unknown preset: ${preset}. Use: intelligence, speed, budget` } });
+    res.status(400).json({ error: { message: `Unknown preset: ${preset}. Use: intelligence, speed, budget, latency` } });
     return;
   }
 
   const db = getDb();
-  const models = db.prepare(`SELECT m.id FROM models m ORDER BY ${orderBy}`).all() as { id: number }[];
+  const models = db.prepare(`
+    SELECT m.id
+    FROM models m
+    LEFT JOIN (
+      SELECT platform, AVG(latency_ms) AS avg_latency_ms
+      FROM requests
+      WHERE status = 'success'
+        AND latency_ms > 0
+        AND created_at >= datetime('now', '-24 hours')
+      GROUP BY platform
+    ) recent ON recent.platform = m.platform
+    ORDER BY ${orderBy}
+  `).all() as { id: number }[];
 
   const update = db.prepare('UPDATE fallback_config SET priority = ? WHERE model_db_id = ?');
   const reorder = db.transaction(() => {

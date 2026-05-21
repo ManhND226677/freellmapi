@@ -14,7 +14,7 @@ function safeNext(value: string | null): string {
 export default function LoginPage() {
   const navigate = useNavigate()
   const [params] = useSearchParams()
-  const [username, setUsername] = useState('nguyenhoang287')
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)

@@ -48,6 +48,8 @@ describe('Fallback API', () => {
     expect(first).toHaveProperty('platform');
     expect(first).toHaveProperty('displayName');
     expect(first).toHaveProperty('intelligenceRank');
+    expect(first).toHaveProperty('avgLatencyMs');
+    expect(first).toHaveProperty('latencySamples');
   });
 
   it('PUT /api/fallback updates order', async () => {
@@ -96,6 +98,11 @@ describe('Fallback API', () => {
     for (let i = 1; i < body.length; i++) {
       expect(body[i].speedRank).toBeGreaterThanOrEqual(body[i - 1].speedRank);
     }
+  });
+
+  it('POST /api/fallback/sort/latency sorts by recent provider latency', async () => {
+    const { status } = await request(app, 'POST', '/api/fallback/sort/latency');
+    expect(status).toBe(200);
   });
 
   it('POST /api/fallback/sort/invalid returns 400', async () => {
