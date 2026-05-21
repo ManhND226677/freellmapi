@@ -11,15 +11,14 @@ import { BaseProvider, type CompletionOptions } from './base.js';
 
 const API_BASE = 'https://api.anthropic.com/v1';
 const ANTHROPIC_VERSION = '2023-06-01';
-const OPUS_OFFICIAL_MODEL = 'claude-opus-4-1-20250805';
 
-export const ANTHROPIC_OPUS_FACADE_MODEL = 'claude-opus-4.7';
+export const ANTHROPIC_OPUS_FACADE_MODEL = 'claude-opus-4-7';
+export const ANTHROPIC_OPUS_DOT_ALIAS = 'claude-opus-4.7';
 
 const MODEL_ALIASES: Record<string, string> = {
-  [ANTHROPIC_OPUS_FACADE_MODEL]: OPUS_OFFICIAL_MODEL,
-  'claude-opus-4-7': OPUS_OFFICIAL_MODEL,
-  'claude-opus-4.1': OPUS_OFFICIAL_MODEL,
-  'claude-opus-4-1': OPUS_OFFICIAL_MODEL,
+  [ANTHROPIC_OPUS_DOT_ALIAS]: ANTHROPIC_OPUS_FACADE_MODEL,
+  'claude-opus-4.1': 'claude-opus-4-1-20250805',
+  'claude-opus-4-1': 'claude-opus-4-1-20250805',
 };
 
 type AnthropicContentBlock =
@@ -193,8 +192,8 @@ function buildBody(messages: ChatMessage[], modelId: string, options?: Completio
   if (body.tools === undefined) delete body.tools;
   if (body.tool_choice === undefined) delete body.tool_choice;
 
-  // Opus 4.1 rejects requests that include both temperature and top_p.
-  if (toAnthropicModelId(modelId) === OPUS_OFFICIAL_MODEL && body.temperature !== undefined && body.top_p !== undefined) {
+  // Opus 4.x rejects requests that include both temperature and top_p.
+  if (toAnthropicModelId(modelId).startsWith('claude-opus-4') && body.temperature !== undefined && body.top_p !== undefined) {
     delete body.top_p;
   }
 

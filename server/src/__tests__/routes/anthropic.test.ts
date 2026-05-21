@@ -49,8 +49,38 @@ describe('Anthropic-compatible routes', () => {
     });
 
     expect(status).toBe(200);
-    expect(body.data[0].id).toBe('claude-opus-4.7');
+    expect(body.data[0].id).toBe('claude-opus-4-7');
     expect(body.data[0].type).toBe('model');
+  });
+
+  it('responds to Claude Office token validation on GET /v1/messages', async () => {
+    const { status, body } = await request(app, 'GET', '/v1/messages', undefined, {
+      'anthropic-version': '2023-06-01',
+      'x-api-key': 'freellmapi-test',
+    });
+
+    expect(status).toBe(200);
+    expect(body).toEqual({ type: 'messages_endpoint', status: 'ok' });
+  });
+
+  it('does not use localhost auth bypass on Vercel', async () => {
+    const previousVercel = process.env.VERCEL;
+    process.env.VERCEL = '1';
+    try {
+      const { status, body } = await request(app, 'GET', '/v1/models', undefined, {
+        'anthropic-version': '2023-06-01',
+        'x-api-key': 'freellmapi-invalid',
+      });
+
+      expect(status).toBe(401);
+      expect(body.error.type).toBe('authentication_error');
+    } finally {
+      if (previousVercel === undefined) {
+        delete process.env.VERCEL;
+      } else {
+        process.env.VERCEL = previousVercel;
+      }
+    }
   });
 
   it('accepts /v1/messages and falls back through normal providers', async () => {
@@ -87,7 +117,7 @@ describe('Anthropic-compatible routes', () => {
     });
 
     const { status, body, headers } = await request(app, 'POST', '/v1/messages', {
-      model: 'claude-opus-4.7',
+      model: 'claude-opus-4-7',
       max_tokens: 128,
       messages: [{ role: 'user', content: 'hi' }],
     }, {
@@ -98,7 +128,7 @@ describe('Anthropic-compatible routes', () => {
     expect(status).toBe(200);
     expect(headers.get('x-routed-via')).toContain('groq/');
     expect(body.type).toBe('message');
-    expect(body.model).toBe('claude-opus-4.7');
+    expect(body.model).toBe('claude-opus-4-7');
     expect(body.content[0]).toEqual({ type: 'text', text: 'hello from fallback' });
     expect(body.usage.input_tokens).toBe(5);
     expect(body.usage.output_tokens).toBe(4);

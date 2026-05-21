@@ -84,7 +84,7 @@ The problem is that stacking them by hand is painful: different SDKs, different 
 
 ## Anthropic-compatible API
 
-`POST /v1/messages` accepts Anthropic Messages API requests. Use this mode for clients that only speak Anthropic, including Claude in Excel. The model `claude-opus-4.7` is a local compatibility facade: the router tries the configured Claude Opus route first, then falls back through the normal provider chain. Check `X-Routed-Via` to see the provider that actually served the call.
+`POST /v1/messages` accepts Anthropic Messages API requests. Use this mode for clients that only speak Anthropic, including Claude in Excel. The model `claude-opus-4-7` is a local compatibility facade: the router tries the configured Claude Opus route first, then falls back through the normal provider chain. The legacy dotted alias `claude-opus-4.7` is still accepted by the API, but Claude in Excel rejects dotted model IDs during setup. Check `X-Routed-Via` to see the provider that actually served the call.
 
 ## Not yet supported
 
@@ -230,7 +230,11 @@ Every response carries an `X-Routed-Via: <platform>/<model>` header so you can s
 
 ### Anthropic-compatible clients
 
-Set the API/base URL to `http://localhost:3001/v1`, set the API key to your unified FreeLLMAPI key, and use model `claude-opus-4.7`.
+For Claude in Excel, set the Gateway URL to the gateway root, for example `https://freellmapi.vercel.app` or `http://localhost:3001` without `/v1`. The add-in calls `/v1/models` and `/v1/messages` itself. Use your unified FreeLLMAPI key as the token. If the add-in asks for a model manually, enter `claude-opus-4-7`.
+
+The gateway also answers `GET /v1/messages` with a lightweight token-validation response for Claude Office setup flows.
+
+For Anthropic SDKs, set the API/base URL to `http://localhost:3001/v1`, set the API key to your unified FreeLLMAPI key, and use model `claude-opus-4-7`.
 
 **curl**
 
@@ -240,7 +244,7 @@ curl http://localhost:3001/v1/messages \
   -H "anthropic-version: 2023-06-01" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "claude-opus-4.7",
+    "model": "claude-opus-4-7",
     "max_tokens": 512,
     "messages": [{"role": "user", "content": "hi"}]
   }'
@@ -257,7 +261,7 @@ client = Anthropic(
 )
 
 message = client.messages.create(
-    model="claude-opus-4.7",
+    model="claude-opus-4-7",
     max_tokens=512,
     messages=[{"role": "user", "content": "Summarise this sheet."}],
 )

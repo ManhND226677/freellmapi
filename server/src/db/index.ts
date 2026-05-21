@@ -1004,9 +1004,9 @@ function migrateModelsV12(db: Database.Database) {
   // We set null limits to indicate "provider-managed" — the AnthropicProvider
   // will handle 429s via the standard retry mechanism.
   //
-  // Claude model IDs match official Anthropic API model strings. The
-  // /v1/messages route also accepts claude-opus-4.7 as a local facade for
-  // clients that require an Opus-looking model name.
+  // Claude model IDs mostly match official Anthropic API model strings. The
+  // /v1/messages route accepts claude-opus-4.7 as a legacy alias, but exposes
+  // claude-opus-4-7 because Claude in Excel rejects dotted model IDs.
   //
   // Intelligence / speed ranks are relative to the existing catalog:
   // Current rows below use Opus 4.1, Opus 4, Sonnet 4, and Haiku 3.5.
@@ -1014,17 +1014,30 @@ function migrateModelsV12(db: Database.Database) {
   //   Sonnet 4.6 — rank 3: strong reasoning, similar to GPT-4o / Gemini 2.5
   //   Haiku 4.5 — rank 8: fast, cheap, beats most mid-tier open models
   const insert = db.prepare(`
-    INSERT OR IGNORE INTO models (platform, model_id, display_name, intelligence_rank, speed_rank, size_label, rpm_limit, rpd_limit, tpm_limit, tpd_limit, monthly_token_budget, context_window)
+    INSERT INTO models (platform, model_id, display_name, intelligence_rank, speed_rank, size_label, rpm_limit, rpd_limit, tpm_limit, tpd_limit, monthly_token_budget, context_window)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(platform, model_id) DO UPDATE SET
+      display_name = excluded.display_name,
+      intelligence_rank = excluded.intelligence_rank,
+      speed_rank = excluded.speed_rank,
+      size_label = excluded.size_label,
+      rpm_limit = excluded.rpm_limit,
+      rpd_limit = excluded.rpd_limit,
+      tpm_limit = excluded.tpm_limit,
+      tpd_limit = excluded.tpd_limit,
+      monthly_token_budget = excluded.monthly_token_budget,
+      context_window = excluded.context_window,
+      enabled = 1
   `);
   const additions: Array<[string, string, string, number, number, string, number | null, number | null, number | null, number | null, string, number | null]> = [
-    // Claude Opus 4.7 — flagship model. Context: 200k tokens.
-    // Pricing: ~$15 input / $75 output per 1M tokens (paid).
-    ['anthropic', 'claude-opus-4-1-20250805', 'Claude Opus 4.1', 1, 5, 'Frontier', null, null, null, null, '~$15/$75/M tokens', 200000],
+    // Claude Opus 4.7 facade for gateway clients that require Opus 4.5+ naming.
+    // Keep this first so Claude in Excel discovers the shield route before fallbacks.
+    ['anthropic', 'claude-opus-4-7', 'Claude Opus 4.7', 1, 5, 'Frontier', null, null, null, null, '~$5/$25/M tokens', 1000000],
+    ['anthropic', 'claude-opus-4-1-20250805', 'Claude Opus 4.1', 2, 5, 'Frontier', null, null, null, null, '~$15/$75/M tokens', 200000],
     // Claude Sonnet 4.6 — balanced reasoning + speed. Context: 200k tokens.
     // Pricing: ~$3 input / $15 output per 1M tokens (paid).
-    ['anthropic', 'claude-opus-4-20250514',   'Claude Opus 4',   2, 5, 'Frontier', null, null, null, null, '~$15/$75/M tokens', 200000],
-    ['anthropic', 'claude-sonnet-4-20250514', 'Claude Sonnet 4', 3, 4, 'Large',    null, null, null, null, '~$3/$15/M tokens',   200000],
+    ['anthropic', 'claude-opus-4-20250514',   'Claude Opus 4',   3, 5, 'Frontier', null, null, null, null, '~$15/$75/M tokens', 200000],
+    ['anthropic', 'claude-sonnet-4-20250514', 'Claude Sonnet 4', 4, 4, 'Large',    null, null, null, null, '~$3/$15/M tokens',   200000],
     // Claude Haiku 4.5 — fast, affordable. Context: 200k tokens.
     // Pricing: ~$0.8 input / $4 output per 1M tokens (paid).
     ['anthropic', 'claude-3-5-haiku-20241022', 'Claude Haiku 3.5', 8, 3, 'Medium', null, null, null, null, '~$0.80/$4/M tokens', 200000],
@@ -1035,7 +1048,7 @@ function migrateModelsV12(db: Database.Database) {
       UPDATE models
          SET enabled = 0
        WHERE platform = 'anthropic'
-         AND model_id IN ('claude-opus-4-7', 'claude-sonnet-4-6', 'claude-haiku-4-5-20250501')
+         AND model_id IN ('claude-sonnet-4-6', 'claude-haiku-4-5-20250501')
     `).run();
 
     for (const a of additions) insert.run(...a);
@@ -1050,14 +1063,14 @@ function migrateModelsV12(db: Database.Database) {
       for (let i = 0; i < missing.length; i++) addFb.run(missing[i].id, maxPriority + i + 1);
     }
 
-    const flag = db.prepare("SELECT value FROM settings WHERE key = 'migration_v12_anthropic_shield_priority'").get() as { value: string } | undefined;
-    if (!flag) {
-      const opus = db.prepare(`
-        SELECT id FROM models
-         WHERE platform = 'anthropic'
-           AND model_id = 'claude-opus-4-1-20250805'
-      `).get() as { id: number } | undefined;
-      if (opus) {
+    const opus = db.prepare(`
+      SELECT id FROM models
+       WHERE platform = 'anthropic'
+         AND model_id = 'claude-opus-4-7'
+    `).get() as { id: number } | undefined;
+    if (opus) {
+      const current = db.prepare('SELECT priority, enabled FROM fallback_config WHERE model_db_id = ?').get(opus.id) as { priority: number; enabled: number } | undefined;
+      if (!current || current.priority !== 1 || current.enabled !== 1) {
         db.prepare('UPDATE fallback_config SET priority = priority + 1 WHERE model_db_id != ? AND priority >= 1').run(opus.id);
         db.prepare(`
           INSERT INTO fallback_config (model_db_id, priority, enabled)
@@ -1065,8 +1078,12 @@ function migrateModelsV12(db: Database.Database) {
           ON CONFLICT(model_db_id) DO UPDATE SET priority = 1, enabled = 1
         `).run(opus.id);
       }
-      db.prepare("INSERT INTO settings (key, value) VALUES ('migration_v12_anthropic_shield_priority', '1')").run();
     }
+    db.prepare(`
+      INSERT INTO settings (key, value)
+      VALUES ('migration_v12_anthropic_shield_priority', '2')
+      ON CONFLICT(key) DO UPDATE SET value = '2'
+    `).run();
   });
   apply();
 }

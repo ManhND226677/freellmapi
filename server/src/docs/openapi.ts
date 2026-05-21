@@ -38,6 +38,15 @@ export const openapiSpec = {
       },
     },
     '/v1/messages': {
+      get: {
+        summary: 'Validate Anthropic-compatible gateway token',
+        description: 'Returns 200 when the unified API key is valid. Claude Office add-ins use this before model discovery.',
+        security: [{ anthropicKey: [] }],
+        responses: {
+          '200': { description: 'Gateway token is valid.' },
+          '401': { description: 'Invalid API key.' },
+        },
+      },
       post: {
         summary: 'Create an Anthropic-compatible message',
         description: 'Accepts Anthropic Messages API requests for clients such as Claude in Excel. The model field is treated as a facade; routing still falls back through the configured provider chain.',
@@ -50,7 +59,7 @@ export const openapiSpec = {
                 type: 'object',
                 required: ['model', 'messages'],
                 properties: {
-                  model: { type: 'string', example: 'claude-opus-4.7' },
+                  model: { type: 'string', example: 'claude-opus-4-7' },
                   max_tokens: { type: 'integer', example: 1024 },
                   system: { oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'object' } }] },
                   messages: { type: 'array', items: { type: 'object' } },

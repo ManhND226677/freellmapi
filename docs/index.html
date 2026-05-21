@@ -414,12 +414,12 @@
     -H <span class="s">"Content-Type: application/json"</span> \
     -d <span class="s">'{"messages":[{"role":"user","content":"hi"}]}'</span>
 <span class="blank"></span>
-<span class="c"># 4. or call it like Anthropic / Claude in Excel</span>
+<span class="c"># 4. Anthropic SDKs use /v1; Claude in Excel uses the root URL without /v1</span>
 <span class="prompt">$</span><span class="k">curl</span> http://localhost:3001/v1/messages \
     -H <span class="s">"x-api-key: freellmapi-your-unified-key"</span> \
     -H <span class="s">"anthropic-version: 2023-06-01"</span> \
     -H <span class="s">"Content-Type: application/json"</span> \
-    -d <span class="s">'{"model":"claude-opus-4.7","max_tokens":256,"messages":[{"role":"user","content":"hi"}]}'</span></pre>
+    -d <span class="s">'{"model":"claude-opus-4-7","max_tokens":256,"messages":[{"role":"user","content":"hi"}]}'</span></pre>
       </div>
     </section>
 

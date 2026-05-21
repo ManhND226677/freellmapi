@@ -288,9 +288,10 @@ function UnifiedKeySection() {
 }
 
 function ApiGuideSection() {
-  const baseUrl = import.meta.env.DEV
-    ? `http://${window.location.hostname}:${__SERVER_PORT__}/v1`
-    : `${window.location.origin}/v1`
+  const gatewayRoot = import.meta.env.DEV
+    ? `http://${window.location.hostname}:${__SERVER_PORT__}`
+    : window.location.origin
+  const baseUrl = `${gatewayRoot}/v1`
   const apiKey = 'freellmapi-your-unified-key'
 
   return (
@@ -314,16 +315,18 @@ function ApiGuideSection() {
         <div className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs">
           <span className="text-muted-foreground">Base URL</span>
           <code className="font-mono truncate">{baseUrl}</code>
+          <span className="text-muted-foreground">Excel Gateway</span>
+          <code className="font-mono truncate">{gatewayRoot}</code>
           <span className="text-muted-foreground">Endpoint</span>
           <code className="font-mono">/messages</code>
           <span className="text-muted-foreground">Model</span>
-          <code className="font-mono">claude-opus-4.7</code>
+          <code className="font-mono">claude-opus-4-7</code>
         </div>
         <pre className="mt-4 overflow-x-auto rounded-md bg-muted p-3 text-[11px] leading-5"><code>{`curl ${baseUrl}/messages \\
   -H "x-api-key: ${apiKey}" \\
   -H "anthropic-version: 2023-06-01" \\
   -H "Content-Type: application/json" \\
-  -d '{"model":"claude-opus-4.7","max_tokens":256,"messages":[{"role":"user","content":"hi"}]}'`}</code></pre>
+  -d '{"model":"claude-opus-4-7","max_tokens":256,"messages":[{"role":"user","content":"hi"}]}'`}</code></pre>
       </div>
     </section>
   )

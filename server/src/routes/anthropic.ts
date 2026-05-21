@@ -12,15 +12,15 @@ import type {
 import { getDb, getUnifiedApiKey, persistDbSnapshot } from '../db/index.js';
 import { routeRequest, recordRateLimitHit, recordSuccess, type RouteResult } from '../services/router.js';
 import { recordRequest, recordTokens, setCooldown } from '../services/ratelimit.js';
-import { ANTHROPIC_OPUS_FACADE_MODEL } from '../providers/anthropic.js';
+import { ANTHROPIC_OPUS_DOT_ALIAS, ANTHROPIC_OPUS_FACADE_MODEL } from '../providers/anthropic.js';
 
 export const anthropicRouter = Router();
 
 const MAX_RETRIES = 20;
 const SHIELD_MODEL_IDS = [
-  'claude-opus-4-1-20250805',
   ANTHROPIC_OPUS_FACADE_MODEL,
-  'claude-opus-4-7',
+  ANTHROPIC_OPUS_DOT_ALIAS,
+  'claude-opus-4-1-20250805',
   'claude-opus-4.1',
   'claude-opus-4-1',
 ];
@@ -33,7 +33,10 @@ function timingSafeStringEqual(provided: string, expected: string): boolean {
 }
 
 function authenticate(req: Request, res: Response): boolean {
-  const isLocal = req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '::ffff:127.0.0.1';
+  const allowLocalBypass = process.env.NODE_ENV !== 'production' && process.env.VERCEL !== '1';
+  const isLocal = allowLocalBypass && (
+    req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '::ffff:127.0.0.1'
+  );
   if (isLocal) return true;
 
   const token = req.headers['x-api-key']?.toString()
@@ -168,8 +171,8 @@ function getShieldModelDbId(): number | undefined {
     SELECT id FROM models
     WHERE platform = 'anthropic' AND enabled = 1 AND model_id IN (${placeholders})
     ORDER BY CASE model_id
-      WHEN 'claude-opus-4-1-20250805' THEN 0
-      WHEN ? THEN 1
+      WHEN ? THEN 0
+      WHEN 'claude-opus-4-1-20250805' THEN 1
       ELSE 2
     END
     LIMIT 1
@@ -191,6 +194,7 @@ function isRetryableError(err: any): boolean {
     || msg.includes('quota') || msg.includes('resource_exhausted')
     || msg.includes('aborted') || msg.includes('timeout') || msg.includes('etimedout')
     || msg.includes('econnrefused') || msg.includes('econnreset')
+    || msg.includes('unsupported model') || msg.includes('invalid model') || msg.includes('model not found')
     || msg.includes('503') || msg.includes('unavailable')
     || msg.includes('500') || msg.includes('internal server error');
 }
@@ -285,8 +289,8 @@ anthropicRouter.get('/models', (req: Request, res: Response, next: NextFunction)
       {
         id: ANTHROPIC_OPUS_FACADE_MODEL,
         type: 'model',
-        display_name: 'Claude Opus 4.7 Shield',
-        created_at: '2025-08-05T00:00:00Z',
+        display_name: 'Claude Opus 4.7',
+        created_at: '2026-04-16T00:00:00Z',
       },
       {
         id: 'claude-opus-4-1-20250805',
@@ -320,8 +324,21 @@ anthropicRouter.get('/models/:modelId', (req: Request, res: Response, next: Next
   res.json({
     id: modelId,
     type: 'model',
-    display_name: modelId === ANTHROPIC_OPUS_FACADE_MODEL ? 'Claude Opus 4.7 Shield' : 'Claude Opus 4.1',
-    created_at: '2025-08-05T00:00:00Z',
+    display_name: [ANTHROPIC_OPUS_FACADE_MODEL, ANTHROPIC_OPUS_DOT_ALIAS].includes(modelId)
+      ? 'Claude Opus 4.7'
+      : 'Claude Opus 4.1',
+    created_at: [ANTHROPIC_OPUS_FACADE_MODEL, ANTHROPIC_OPUS_DOT_ALIAS].includes(modelId)
+      ? '2026-04-16T00:00:00Z'
+      : '2025-08-05T00:00:00Z',
+  });
+});
+
+anthropicRouter.get('/messages', (req: Request, res: Response) => {
+  if (!authenticate(req, res)) return;
+
+  res.json({
+    type: 'messages_endpoint',
+    status: 'ok',
   });
 });
 
