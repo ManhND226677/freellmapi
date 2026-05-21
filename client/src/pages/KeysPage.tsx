@@ -26,6 +26,7 @@ const PLATFORMS: { value: Platform; label: string }[] = [
   { value: 'kilo', label: 'Kilo Gateway (anon ok)' },
   { value: 'pollinations', label: 'Pollinations (anon ok)' },
   { value: 'llm7', label: 'LLM7 (anon ok)' },
+  { value: 'luna', label: 'Luna Proxy (Qwen sidecar)' },
   { value: 'anthropic', label: 'Anthropic Claude' },
 ]
 
@@ -417,6 +418,7 @@ export default function KeysPage() {
   })
 
   const needsAccountId = platform === 'cloudflare'
+  const isLuna = platform === 'luna'
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -556,12 +558,12 @@ export default function KeysPage() {
               </div>
             )}
             <div className="space-y-1.5 flex-1 min-w-[240px]">
-              <Label className="text-xs">{needsAccountId ? 'API token' : 'API key'}</Label>
+              <Label className="text-xs">{needsAccountId ? 'API token' : isLuna ? 'Proxy key' : 'API key'}</Label>
               <Input
                 type="password"
                 value={apiKey}
                 onChange={e => setApiKey(e.target.value)}
-                placeholder={needsAccountId ? 'Bearer token' : 'paste key here'}
+                placeholder={needsAccountId ? 'Bearer token' : isLuna ? 'Luna proxy key or local-placeholder' : 'paste key here'}
                 className="font-mono text-xs"
               />
             </div>

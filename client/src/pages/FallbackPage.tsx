@@ -72,6 +72,7 @@ const platformColors: Record<string, string> = {
   kilo:        '#7c3aed',
   pollinations: '#a855f7',
   llm7:        '#0ea5e9',
+  luna:        '#7c3aed',
   anthropic:   '#c15f3c',
 }
 

@@ -69,6 +69,7 @@ export function initDb(dbPath?: string): Database.Database {
   migrateModelsV10(db);
   migrateModelsV11(db);
   migrateModelsV12(db);
+  migrateModelsV13Luna(db);
   ensureUnifiedKey(db);
 
   // Register model aliases
@@ -1070,6 +1071,45 @@ function migrateModelsV12(db: Database.Database) {
   apply();
 }
 
+/**
+ * V13 (May 2026):
+ * Add Luna Proxy as a first-class sidecar provider. Luna exposes Qwen's web
+ * chat through OpenAI-compatible `/v1/chat/completions` and `/v1/models`,
+ * while FreeLLM keeps the unified key, fallback chain, analytics, and client
+ * compatibility facade.
+ */
+function migrateModelsV13Luna(db: Database.Database) {
+  const insert = db.prepare(`
+    INSERT OR IGNORE INTO models (platform, model_id, display_name, intelligence_rank, speed_rank, size_label, rpm_limit, rpd_limit, tpm_limit, tpd_limit, monthly_token_budget, context_window)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const additions: Array<[string, string, string, number, number, string, number | null, number | null, number | null, number | null, string, number | null]> = [
+    ['luna', 'qwen-latest-series-invite-beta-v24', 'Qwen3.7 Max Preview (Luna)', 2, 8, 'Frontier', null, null, null, null, 'Qwen web quota', 262144],
+    ['luna', 'qwen3.6-max-preview',                'Qwen3.6 Max Preview (Luna)', 2, 8, 'Frontier', null, null, null, null, 'Qwen web quota', 262144],
+    ['luna', 'qwen3-coder-plus',                   'Qwen3 Coder Plus (Luna)',   3, 8, 'Frontier', null, null, null, null, 'Qwen web quota', 1048576],
+    ['luna', 'qwen3.6-plus',                       'Qwen3.6 Plus (Luna)',       4, 8, 'Large',    null, null, null, null, 'Qwen web quota', 1000000],
+    ['luna', 'qwen3.5-flash',                      'Qwen3.5 Flash (Luna)',      12, 9, 'Medium',   null, null, null, null, 'Qwen web quota', 1000000],
+  ];
+
+  const apply = db.transaction(() => {
+    for (const a of additions) insert.run(...a);
+
+    const missing = db.prepare(`
+      SELECT m.id FROM models m
+      LEFT JOIN fallback_config f ON m.id = f.model_db_id
+      WHERE f.id IS NULL ORDER BY m.intelligence_rank ASC
+    `).all() as { id: number }[];
+    if (missing.length > 0) {
+      const maxPriority = (db.prepare('SELECT COALESCE(MAX(priority), 0) AS mx FROM fallback_config').get() as { mx: number }).mx;
+      const addFallback = db.prepare('INSERT INTO fallback_config (model_db_id, priority, enabled) VALUES (?, ?, 1)');
+      for (let i = 0; i < missing.length; i++) addFallback.run(missing[i].id, maxPriority + i + 1);
+    }
+  });
+
+  apply();
+}
+
 function ensureUnifiedKey(db: Database.Database) {
   const configuredKey = getConfiguredUnifiedApiKey();
   if (configuredKey) {
@@ -1141,9 +1181,11 @@ function registerModelAliases(db: Database.Database) {
   const aliases: Array<[string, string, string, string]> = [
     // 9router-style alias: claude-opus-4-6 maps to claude-opus-4-7 on anthropic platform
     ['claude-opus-4-6', 'anthropic', 'claude-opus-4-7', 'random'],
-    // Add more aliases as needed
-    // ['gpt-5', 'github', 'openai/gpt-5', 'random'],
-    // ['claude-opus', 'anthropic', 'claude-opus-4-7', 'random'],
+    // Luna/Qwen convenience aliases. These only route when a Luna key is
+    // configured and the sidecar is reachable.
+    ['qwen-luna', 'luna', 'qwen-latest-series-invite-beta-v24', 'round_robin'],
+    ['qwen3.7-max-preview', 'luna', 'qwen-latest-series-invite-beta-v24', 'round_robin'],
+    ['qwen3-coder-luna', 'luna', 'qwen3-coder-plus', 'round_robin'],
   ];
 
   const insertAlias = db.prepare(`

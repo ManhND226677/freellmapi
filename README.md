@@ -4,7 +4,7 @@
 
 **OpenAI-compatible and Anthropic-compatible endpoints. Free-tier LLM routing behind one key.**
 
-Aggregate the free tiers from Google, Groq, Cerebras, SambaNova, NVIDIA, Mistral, OpenRouter, GitHub Models, Cohere, Cloudflare, Z.ai (Zhipu), and Anthropic-compatible Claude access behind `/v1/chat/completions` plus `/v1/messages`. Keys are stored encrypted. A router picks the best available model for each request, falls over to the next provider when one is rate-limited, and tracks per-key usage so you stay under every free-tier cap.
+Aggregate the free tiers from Google, Groq, Cerebras, SambaNova, NVIDIA, Mistral, OpenRouter, GitHub Models, Cohere, Cloudflare, Z.ai (Zhipu), Luna Proxy/Qwen, and Anthropic-compatible Claude access behind `/v1/chat/completions` plus `/v1/messages`. Keys are stored encrypted. A router picks the best available model for each request, falls over to the next provider when one is rate-limited, and tracks per-key usage so you stay under every free-tier cap.
 
 [![CI](https://github.com/tashfeenahmed/freellmapi/actions/workflows/ci.yml/badge.svg)](https://github.com/tashfeenahmed/freellmapi/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
@@ -58,6 +58,12 @@ The problem is that stacking them by hand is painful: different SDKs, different 
 <td align="center"><a href="https://docs.anthropic.com"><b>Anthropic</b><br/>Claude Opus/Sonnet/Haiku</a></td>
 <td align="center"><a href="https://build.nvidia.com"><b>NVIDIA</b><br/>NIM</a></td>
 </tr>
+<tr>
+<td align="center"><a href="https://github.com/wholock2210/Luna-Proxy"><b>Luna Proxy</b><br/>Qwen web chat sidecar</a></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
 </table>
 
 ## Features
@@ -73,6 +79,7 @@ The problem is that stacking them by hand is painful: different SDKs, different 
 - **Health checks** — Periodic probes mark keys as `healthy`, `rate_limited`, `invalid`, or `error` so the router skips dead ones automatically.
 - **Admin dashboard** — React + Vite UI to manage keys, reorder the fallback chain, inspect analytics, and run prompts in a playground. Dark mode included.
 - **Analytics** — Per-request logging with latency, token counts, success rate, and per-provider breakdowns.
+- **Luna sidecar** — Managed helper scripts can clone and run Luna Proxy locally so Qwen web-chat access becomes a normal FreeLLM provider.
 - **Deploys to a Raspberry Pi** — Runs happily on a Pi 4 under PM2 behind nginx. ~40 MB RSS at idle.
 
 ## Anthropic-compatible API
@@ -112,6 +119,15 @@ npm run dev
 ```
 
 Open http://localhost:5173 (the Vite dev UI), add your provider keys on the **Keys** page, reorder the **Fallback Chain** to taste, and grab your unified API key from the **Keys** page header. That unified key is what you point your OpenAI SDK at.
+
+To run Qwen through Luna Proxy as part of the local stack:
+
+```bash
+npm run luna:setup
+npm run dev:with-luna
+```
+
+Open Luna at `http://127.0.0.1:8080/`, add Qwen credentials there, then add a FreeLLM key for provider `luna`. Use Luna's `proxy.key` if configured, or any non-empty placeholder when Luna auth is disabled. For Vercel, set `LUNA_PROXY_BASE_URL` to a reachable Luna URL; `127.0.0.1` only works when FreeLLM and Luna run on the same machine.
 
 For a production build:
 
@@ -296,6 +312,7 @@ Request volume, success rate, tokens in and out, average latency, and per-provid
 - **Router** (`server/src/services/router.ts`) — picks a model per request.
 - **Rate-limit ledger** (`server/src/services/ratelimit.ts`) — in-memory RPM/RPD/TPM/TPD counters backed by SQLite, with cooldowns on 429s.
 - **Provider adapters** (`server/src/providers/*.ts`) — one file per provider, implementing the `Provider` base class: `chatCompletion()` and `streamChatCompletion()`.
+- **Luna sidecar** (`scripts/ensure-luna.mjs`, `integrations/luna/`) — clones/runs Luna Proxy under `vendor/luna-proxy` and routes Qwen traffic through provider `luna`.
 - **Health service** (`server/src/services/health.ts`) — periodic probe keeps key status fresh.
 - **Dashboard** (`client/`) — React + Vite + shadcn/ui admin surface.
 - **Storage** — SQLite (`better-sqlite3`) with AES-256-GCM envelope encryption for keys.

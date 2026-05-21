@@ -20,6 +20,7 @@ export type Platform =
   | 'kilo'
   | 'pollinations'
   | 'llm7'
+  | 'luna'
   | 'anthropic';
 
 export interface Model {

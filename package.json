@@ -8,6 +8,10 @@
   ],
   "scripts": {
     "dev": "concurrently \"npm run dev -w server\" \"npm run dev -w client\"",
+    "dev:with-luna": "concurrently -n luna,freellm \"npm run luna:dev\" \"npm run dev\"",
+    "luna:setup": "node scripts/ensure-luna.mjs",
+    "luna:update": "node scripts/ensure-luna.mjs --update",
+    "luna:dev": "node scripts/ensure-luna.mjs && npm run dev --prefix vendor/luna-proxy",
     "test": "npm run test -w server && npm run test -w client",
     "build": "npm run build -w server && npm run build -w client",
     "build:server": "npm run build -w server"

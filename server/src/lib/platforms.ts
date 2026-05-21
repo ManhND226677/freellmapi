@@ -14,6 +14,7 @@ export const PLATFORMS = [
   'kilo',
   'pollinations',
   'llm7',
+  'luna',
   'anthropic',
 ] as const;
 

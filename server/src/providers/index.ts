@@ -5,6 +5,7 @@ import { OpenAICompatProvider } from './openai-compat.js';
 import { CohereProvider } from './cohere.js';
 import { CloudflareProvider } from './cloudflare.js';
 import { AnthropicProvider } from './anthropic.js';
+import { LunaProvider } from './luna.js';
 
 const providers = new Map<Platform, BaseProvider>();
 
@@ -136,6 +137,11 @@ register(new OpenAICompatProvider({
   name: 'LLM7',
   baseUrl: 'https://api.llm7.io/v1',
 }));
+
+// Luna Proxy sidecar - OpenAI-compatible bridge to Qwen web chat. The default
+// base URL points at the bundled local sidecar (`npm run luna:dev`) and can be
+// overridden with LUNA_PROXY_BASE_URL for remote/Vercel deployments.
+register(new LunaProvider());
 
 // Chutes was evaluated for V11 and dropped: probe with a free-tier key
 // returned 402 on every model — "Quota exceeded and account balance is
